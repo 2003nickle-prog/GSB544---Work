@@ -1,0 +1,44 @@
+---
+title: "Untitled"
+format: html
+---
+
+
+```{python}
+# Import the titanic dataset here
+import numpy as np
+import pandas as pd
+data_dir = "https://dlsun.github.io/pods/data/"
+df_titanic = pd.read_csv(data_dir + "titanic.csv")
+df_titanic
+```
+
+
+```{python}
+passenger_classes = ["1st", "2nd", "3rd"]
+df_titanicpass = df_titanic[df_titanic["class"].isin(passenger_classes)]
+joint_titanic = pd.crosstab(df_titanicpass["class"], df_titanicpass["embarked"], normalize = True)
+joint_titanic
+```
+```{python}
+embarked_given_class = (df_titanicpass.groupby(["class", "embarked"]).size() / df_titanicpass.groupby("class").size())
+class_given_embarked = (df_titanicpass.groupby(["embarked", "class"]).size() / df_titanicpass.groupby("embarked").size())
+
+class_given_embarked
+
+embarked_given_class
+
+# What proportion of 3rd class passengers embarked at Southampton?
+#69.68%
+
+#What proportion of Southampton passengers were in 3rd class?
+#54%
+```
+```{python}
+# Code here
+import matplotlib.pyplot as plt
+
+cross=pd.crosstab(df_titanicpass["class"], df_titanicpass["embarked"], normalize = True)
+cross.plot(kind="bar", stacked=True)
+plt.show()
+```
