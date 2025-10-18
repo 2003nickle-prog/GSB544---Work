@@ -1,0 +1,96 @@
+---
+title: "Practice 4.1"
+author: "Nicholas Le"
+format: 
+    html:
+        embed-resources: true
+---
+
+
+```{python}
+import pandas as pd
+
+import requests
+
+url = "https://en.wikipedia.org/wiki/List_of_United_States_cities_by_population"
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+
+response = requests.get(url, headers=HEADERS)
+
+from bs4 import BeautifulSoup
+soup = BeautifulSoup(response.content, "html.parser")
+
+len(soup.find_all("table"))
+
+len(soup.find_all("table",
+                  attrs={
+                      "class": "sortable wikitable sticky-header-multi static-row-numbers sort-under col1left col2center",
+                      "style": "text-align:right"}
+                  ))
+
+
+table = soup.find_all("table",
+                  attrs={
+                      "class": "sortable wikitable sticky-header-multi static-row-numbers sort-under col1left col2center",
+                      "style": "text-align:right"}
+                  )[0]
+
+import pandas as pd
+rows = table.find_all("tr")
+
+cities = []
+states = []
+populations = []
+land_areas = []
+for row in rows[1:]:
+    cols = row.find_all("td")
+    if len(cols) > 0:
+        cities.append(cols[0].get_text(strip=True))
+        states.append(cols[1].get_text(strip=True))
+        populations.append(cols[2].get_text(strip=True))
+        land_areas.append(cols[5].get_text(strip=True))
+
+df_cities = pd.DataFrame({
+    "City": cities,
+    "State": states,
+    "Population (2024 estimate)": populations,
+    "2020 Land Area (sq mi)": land_areas
+})
+df_cities.head()
+```
+
+
+
+```{python}
+URL = "http://catalog.calpoly.edu/collegesandprograms/collegeofsciencemathematics/statistics/#courseinventory"
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+response = requests.get(URL, headers=HEADERS)
+soup = BeautifulSoup(response.content, "html.parser")
+
+
+course_blocks = soup.find_all("div", {"class": "courseblock"})
+
+course_names = []
+terms_offered = []
+
+for course in course_blocks:
+    name_tag = course.find("p", {"class": "courseblocktitle"})
+    if name_tag:
+        course_names.append(name_tag.get_text(strip=True))
+    else:
+        course_names.append(None)
+
+    term_tag = course.find("p", {"class": "noindent"})
+    if term_tag:
+        terms_offered.append(term_tag.get_text(strip=True))
+    else:
+        terms_offered.append(None)
+
+df_courses = pd.DataFrame({
+    "Course Name and Number": course_names,
+    "Term Typically Offered": terms_offered
+})
+
+display(df_courses.style.set_properties(**{"text-align": "left"})
+.set_table_styles([{"selector": "th", "props": [("text-align", "left")]}]))
+```
