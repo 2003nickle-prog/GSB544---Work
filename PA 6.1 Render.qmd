@@ -1,0 +1,146 @@
+---
+title: "PA 6.1"
+format: html
+embed-resources: true
+toc: true
+---
+
+---
+title: "Untitled"
+format: html
+---
+
+
+```{python}
+import sklearn
+import pandas as pd
+import numpy as np
+from palmerpenguins import load_penguins
+
+penguins = load_penguins()
+
+```
+
+
+```{python}
+penguins = penguins.dropna(subset=['bill_depth_mm'])
+
+print(penguins.head())
+```
+
+
+```{python}
+y = penguins[['bill_depth_mm']]
+x = penguins[["species","island","bill_length_mm","flipper_length_mm", "body_mass_g", "sex", "year"]]
+categorical_var = ["species","island", "sex"]
+numeric_var = ["bil_length","flipper_length_mm", "body_mass_g","year"]
+
+x = pd.get_dummies(x, columns=categorical_var)
+x.head()
+```
+
+
+```{python}
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import PolynomialFeatures
+import matplotlib.pyplot as plt
+
+```
+
+
+```{python}
+# Linear Regression
+lr_model = LinearRegression()
+lr_model.fit(X=penguins[["bill_length_mm"]], y=penguins["bill_depth_mm"])
+lr_model.coef_,lr_model.intercept_
+
+X_new = pd.DataFrame()
+X_new["bill_length_mm"] = np.linspace(penguins["bill_length_mm"].min(), penguins["bill_length_mm"].max(), num=1000)
+y_new_ = pd.Series(
+    lr_model.predict(X_new),
+    index=X_new["bill_length_mm"]
+)
+penguins.plot.scatter(x="bill_length_mm", y="bill_depth_mm")
+y_new_.plot.line(c = "orange");
+```
+
+
+```{python}
+#Quadratic
+penguins["bill_length_sq"] = penguins["bill_length_mm"]**2
+
+q_model = LinearRegression()
+q_model.fit(X=penguins[["bill_length_mm","bill_length_sq"]], y=penguins["bill_depth_mm"])
+q_model.coef_,q_model.intercept_
+
+X_new = pd.DataFrame()
+X_new["bill_length_mm"] = np.linspace(penguins["bill_length_mm"].min(), penguins["bill_length_mm"].max(), num=1000)
+X_new["bill_length_sq"] = X_new["bill_length_mm"]**2
+
+y_new_ = pd.Series(
+    q_model.predict(X_new),
+    index=X_new["bill_length_mm"]
+)
+penguins.plot.scatter(x="bill_length_mm", y="bill_depth_mm")
+y_new_.plot.line(c = "orange");
+```
+
+
+```{python}
+#Cubic
+penguins["bill_length_cu"] = penguins["bill_length_mm"]**3
+
+cube_model = LinearRegression()
+cube_model.fit(X=penguins[["bill_length_mm","bill_length_sq","bill_length_cu"]], y=penguins["bill_depth_mm"])
+cube_model.coef_,cube_model.intercept_
+
+X_new = pd.DataFrame()
+X_new["bill_length_mm"] = np.linspace(penguins["bill_length_mm"].min(), penguins["bill_length_mm"].max(), num=1000)
+X_new["bill_length_sq"] = X_new["bill_length_mm"]**2
+X_new["bill_length_cu"] = X_new["bill_length_mm"]**3
+
+y_new_ = pd.Series(
+    cube_model.predict(X_new),
+    index=X_new["bill_length_mm"]
+)
+penguins.plot.scatter(x="bill_length_mm", y="bill_depth_mm")
+y_new_.plot.line(c = "orange");
+```
+
+
+```{python}
+#10 Degree Polynomial
+poly10 = LinearRegression()
+
+for i in range(2, 11):
+    penguins[f"bill_length_{i}"] = penguins["bill_length_mm"]**i
+
+poly10.fit(
+    X=penguins[["bill_length_mm", "bill_length_2", "bill_length_3", "bill_length_4", "bill_length_5",
+                "bill_length_6", "bill_length_7", "bill_length_8", "bill_length_9", "bill_length_10"]],
+    y=penguins["bill_depth_mm"]
+)
+poly10.coef_, poly10.intercept_
+
+X_new = pd.DataFrame()
+X_new["bill_length_mm"] = np.linspace(penguins["bill_length_mm"].min(), penguins["bill_length_mm"].max(), num=1000)
+
+for i in range(2, 11):
+    X_new[f"bill_length_{i}"] = X_new["bill_length_mm"] ** i
+
+
+y_new_ = pd.Series(
+    poly10.predict(X_new),
+    index=X_new["bill_length_mm"]
+)
+penguins.plot.scatter(x="bill_length_mm", y="bill_depth_mm")
+y_new_.plot.line(c = "orange");
+```
+
+1. The linear model seems to underfit the data, with the straight line being unable to capture all teh data
+
+2. The cubic and 10 degree polynomail seems to overfit the data, as it follows all the variations of data. Capturing the noise.
+
+3. The quadratic seems to fit the data the best, as it captures the general trend.
