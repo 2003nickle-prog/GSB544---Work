@@ -1,0 +1,118 @@
+---
+title: "PA 8.1"
+author: Nicholas Le
+format: html
+embed-resources: true
+toc: true
+---
+
+
+```{python}
+!pip install palmerpenguins
+
+```
+
+
+```{python}
+from plotnine import *
+import pandas as pd
+import numpy as np
+from palmerpenguins import load_penguins
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LinearRegression
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.metrics import mean_squared_error
+```
+
+
+```{python}
+
+penguins = load_penguins()
+
+penguins.dropna(subset=['bill_depth_mm'], inplace=True)
+
+y = penguins['bill_depth_mm']
+x = penguins.drop("bill_depth_mm",axis=1)
+
+x = pd.get_dummies(x, drop_first=True)
+x.head()
+```
+
+
+```{python}
+from sklearn import linear_model
+from sklearn.impute import SimpleImputer
+x_train, x_test, y_train, y_test = train_test_split(x, y, random_state=42, test_size=0.25)
+
+numeric_features = x.select_dtypes(include=['int64', 'float64']).columns
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', Pipeline(steps=[('imputer', SimpleImputer(strategy='mean')), ('scaler', StandardScaler())]), numeric_features)
+    ])
+
+linear_model = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('regressor', LinearRegression())
+])
+
+#k=5
+knn5 = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('regressor', KNeighborsRegressor(n_neighbors=5))])
+
+#k=7
+knn7 = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('regressor', KNeighborsRegressor(n_neighbors=7))])
+
+#decision tree
+dt=Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('regressor', DecisionTreeRegressor(ccp_alpha = 0.5))])
+
+models = {
+    "Linear Regression": linear_model,
+    "KNN (k=5)": knn5,
+    "KNN (k=7)": knn7,
+    "Decision Tree": dt
+}
+results = []
+```
+
+
+```{python}
+results = []
+for name, model in models.items():
+    model.fit(x_train, y_train)
+
+    y_train_pred = model.predict(x_train)
+    y_test_pred = model.predict(x_test)
+
+    train_error = mean_squared_error(y_train, y_train_pred)
+    test_error = mean_squared_error(y_test, y_test_pred)
+
+    results.append({"Model" : name, "Training MSE": train_error,"Test RMSE": test_error})
+
+results_df = pd.DataFrame(results)
+print(results_df)
+
+results_long = results_df.melt(
+    id_vars='Model',
+    value_vars=['Training MSE', 'Test RMSE'],
+    var_name='Error Type',
+    value_name='Error'
+)
+```
+
+
+```{python}
+knnplot = (
+    ggplot(results_long, aes(x='Model', y='Error', fill='Error Type'))
+    + geom_col(position='dodge')
+)
+knnplot
+```

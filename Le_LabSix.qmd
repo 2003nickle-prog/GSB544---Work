@@ -1,0 +1,349 @@
+---
+title: "Lab 6"
+author: Nicholas Le
+format: html
+embed-resources: true
+toc: true
+---
+
+
+```{python}
+import pandas as pd
+import numpy as np
+from sklearn.pipeline import Pipeline
+from sklearn.compose import make_column_selector, ColumnTransformer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, PolynomialFeatures
+from sklearn.metrics import r2_score
+from sklearn.model_selection import GridSearchCV, KFold
+from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet
+from sklearn.model_selection import train_test_split, cross_val_score
+from plotnine import *
+import warnings
+
+warnings.filterwarnings("ignore")
+```
+
+
+```{python}
+myData = pd.read_csv(r"C:\Users\2003n\Desktop\GradClasses Laptop\Hitters.csv")
+myData.head(5)
+myData.isna().sum()
+```
+
+
+```{python}
+myData = myData.dropna()
+myData = pd.get_dummies(myData, columns=["League", "Division", "NewLeague"], drop_first=True)
+x = myData.drop(["Salary"],axis = 1)
+y = myData["Salary"]
+```
+
+Part 1: Different Model Specs
+A. Regression without regularization
+
+```{python}
+preprocessing = ColumnTransformer(
+    transformers=[], remainder ="passthrough"
+)
+
+ols_pipe = Pipeline([
+    ("preprocessing", preprocessing),
+    ("linear regression", LinearRegression())
+])
+ols_pipe.fit(x,y)
+
+coefficients = ols_pipe.named_steps["linear regression"].coef_
+ols_coeftable = (
+    pd.Series(coefficients, index=x.columns, name = "coefficient").sort_values(key=np.abs,ascending = False)
+
+)
+ols_coeftable.head(10)
+```
+```{python}
+mse = -cross_val_score(ols_pipe, x, y, cv = 5, scoring= "neg_mean_squared_error")
+
+print("Average Cross Validation MSE:",mse.mean())
+```
+
+The OLS model MSE is approximately 121136 for salary when predicting the salaries of players in 1989. The coeffcients show that Division_W players tend to have a lower salary than the Eastern division. The number of Hits, Walks, and HmRuns positively contribute towards a players salary. Just looking at Hits, each hit is estiamted to created a players salary by about 7500. Looking at always, each walk shows about a 6231 increase in salary. Looking at HmRuns, each home run can see the player make about a 4330 increase in salary. 
+
+B. Ridge regression
+
+```{python}
+#Penalized Pipelines
+def create_penalized_pipeline (model, x):
+    dummy= [c for c in x.columns if c.startswith(("League", "Division", "NewLeague"))]
+    numeric = [c for c in x.columns if c not in dummy]
+
+    preprocessing = ColumnTransformer(
+        transformers=[("scale_numeric", StandardScaler(),numeric)], remainder= "passthrough"
+    )
+    pipe = Pipeline([
+        ("preprocessing", preprocessing),
+        ("model", model)
+    ])
+    return pipe, numeric, dummy
+```
+
+
+```{python}
+r_pipe, numeric_col, dummy_col = create_penalized_pipeline(Ridge(),x)
+
+
+param = {"model__alpha": [0.01, 0.1, 1, 10, 100, 1000]}
+cv = KFold(5, shuffle = True, random_state = 321)
+ridge_gscv = GridSearchCV(
+    estimator = r_pipe, param_grid = param, scoring = "neg_mean_squared_error",
+    cv = cv, refit = True
+)
+
+ridge_gscv.fit(x,y)
+```
+
+
+```{python}
+best_alpha = ridge_gscv.best_params_["model__alpha"]
+best_mse = -ridge_gscv.best_score_
+print("Best Alpha:", best_alpha)
+print("Best MSE:", best_mse)
+```
+
+
+```{python}
+Ridge_Final, numeric_col, dummy_col = create_penalized_pipeline(Ridge(alpha = 1),x)
+Ridge_Final.fit(x,y)
+
+r_coefs = Ridge_Final.named_steps["model"].coef_
+
+feature_order = numeric_col + dummy_col
+
+r_coeftable = pd.Series(r_coefs, index = feature_order).sort_values(key=np.abs,ascending = False)
+print(r_coeftable)
+```
+
+The most significat coefficients for a positive relationship seem to be CRuns and Hits, which shows that more hits/CRUns generate a significant increase in salary. However AtBat and CaBat seem to not greatly contribute to salary increase, since its negative. It is also seen here that Division_W players still see a lower pay than East
+
+```{python}
+mse = -cross_val_score(Ridge_Final, x, y, cv = 5, scoring= "neg_mean_squared_error")
+
+print("Average Cross Validation MSE:",mse.mean())
+```
+
+The Ridge model produces an MSE of 119034.33 when predicting player salares for 1989, which is an improvement of the OLS model. This is with an alpha of 10.
+
+C. Lasso Regression
+
+
+```{python}
+l_pipe, numeric_col, dummy_col = create_penalized_pipeline(Lasso(max_iter = 10000),x)
+param = {"model__alpha": [0.01, 0.1, 1, 10, 100, 1000]}
+cv = KFold(5, shuffle = True, random_state = 321)
+
+lasso_gscv = GridSearchCV(
+    estimator = l_pipe, param_grid = param, scoring = "neg_mean_squared_error",
+    cv = cv, refit= True
+)
+
+lasso_gscv.fit(x, y)
+
+```
+
+
+```{python}
+best_alpha = lasso_gscv.best_params_["model__alpha"]
+best_mse = -lasso_gscv.best_score_
+print("Best Alpha:", best_alpha)
+print("Best MSE:", best_mse)
+```
+
+
+```{python}
+Lasso_Final, numeric_col, dummy_col = create_penalized_pipeline(
+    Lasso(alpha=best_alpha,max_iter=10000),x
+)
+Lasso_Final.fit(x,y)
+
+l_coefs = Lasso_Final.named_steps["model"].coef_
+
+feature_order = numeric_col + dummy_col
+
+l_coeftable = pd.Series(l_coefs, index = feature_order).sort_values(key=np.abs,ascending = False)
+print(l_coeftable)
+```
+
+Here CRuns and Hits have the most positive relationship to Salary compared to other coefficients. However, you can see that AtBat and CWalks are now negative, which shows that it does not have a strong impact on salary at all. Still Western Division players still see less pay contribution than East players. 
+
+```{python}
+mse = -cross_val_score(Lasso_Final, x, y, cv = 5, scoring= "neg_mean_squared_error")
+
+print("Average Cross Validation MSE:",mse.mean())
+```
+
+The Lasso model produces an MSE of 119758.22 when predicting player salares for 1989, which is an improvement of the OLS model. This is with an alpha of 1.
+
+D. Elastic Net
+
+```{python}
+en_pipe, numeric_col, dummy_col = create_penalized_pipeline(ElasticNet(max_iter=10000, random_state=321),x
+)
+
+param = {"model__alpha": [0.01, 0.1, 1, 10, 100, 1000], "model__l1_ratio":[0.0,0.1, 0.25, 0.5, 0.75, 1.0]}
+cv = KFold(5, shuffle = True, random_state = 321)
+
+en_gscv = GridSearchCV(
+    estimator = en_pipe, param_grid = param, scoring = "neg_mean_squared_error",
+    cv = cv, refit= True
+)
+
+en_gscv.fit(x,y)
+```
+
+
+```{python}
+best_alpha = en_gscv.best_params_["model__alpha"]
+best_l1= en_gscv.best_params_["model__l1_ratio"]
+best_mse = -en_gscv.best_score_
+print("Best Alpha:", best_alpha)
+print("Best L1 Ratio:", best_l1)
+print("Best MSE:", best_mse)
+```
+
+```{python}
+ElasticNet_Final, numeric_col, dummy_col = create_penalized_pipeline(
+    ElasticNet(alpha=best_alpha,l1_ratio=best_l1,max_iter=10000),x
+)
+ElasticNet_Final.fit(x,y)
+
+en_coefs = ElasticNet_Final.named_steps["model"].coef_
+
+feature_order = numeric_col + dummy_col
+
+en_coeftable = pd.Series(en_coefs, index = feature_order).sort_values(key=np.abs,ascending = False)
+print(en_coeftable)
+```
+
+The coefficients with the strongest positive relationship with Salary were Hits and CRuns, meaning more of them increases salary for players. Again you can see that AtBat and Division_W is negative indicating that they have a negative contribution to players salaries
+
+```{python}
+mse = -cross_val_score(ElasticNet_Final, x, y, cv = 5, scoring= "neg_mean_squared_error")
+
+print("Average Cross Validation MSE:",mse.mean())
+```
+
+With an MSE of 119116.47 for the Elastic Net Model (alpha 0.1, l of 0.5), the model was better than the OLS model. 
+
+Part II. Variable Selection
+
+```{python}
+lasso_abs = l_coeftable.abs().sort_values(ascending=False)
+print(lasso_abs)
+```
+
+Best Numeric: CRuns
+Top 5 Numeric: CRuns, Hits, AtBat, CRBI, CWalks
+Best Categorical: Division_W
+
+
+```{python}
+one_numeric = ["CRuns"]
+five_numeric = ["CRuns","Hits", "AtBat", "CRBI", "CWalks"]
+categorical = "Division_W"
+
+myData2 = myData.copy()
+for v in five_numeric:
+    myData2[f"{v}:{categorical}"] = myData2[v]* myData2[categorical]
+
+features = {"one numeric": one_numeric,"five numeric": five_numeric,
+    "5 numeric + categorical inter": five_numeric + [categorical] +[f"{v}:{categorical}" for v in five_numeric],}
+
+cv = KFold(5, shuffle = True, random_state = 321)
+```
+
+
+```{python}
+def create_preprocessing(x):
+    pre_scale =[col for col in x.columns if col.startswith(("League", "Division", "NewLeague")) or (":" in col) ] #gpt for assistance
+
+    numeric =[col for col in x.columns if col not in  pre_scale]
+    return ColumnTransformer([("scale_numeric",StandardScaler(), numeric)], remainder= "passthrough")
+
+def model_compare(estimator, x, y, param_grid = None):
+    pipe = Pipeline([("pre",create_preprocessing(x)),("model",estimator)])
+    if param_grid is None:
+        mse = -cross_val_score(pipe, x, y, cv = 5, scoring= "neg_mean_squared_error").mean()
+        return mse, {}
+
+    gridsearch = GridSearchCV(
+            pipe, param_grid, scoring = "neg_mean_squared_error",cv = cv, refit = True
+    )
+    gridsearch.fit(x,y)
+    return -gridsearch.best_score_,gridsearch.best_params_
+
+```
+
+
+```{python}
+models={
+    "OLS": (LinearRegression(),None),
+    "Ridge": (Ridge(),{"model__alpha": [0.01, 0.1, 1, 10, 100, 1000]}),
+    "Lasso": (Lasso(max_iter= 10000),{"model__alpha":[0.01, 0.1, 1, 10, 100, 1000]}),
+    "Elastic Net": (ElasticNet(max_iter=10000,random_state=321), {
+        "model__alpha": [0.01, 0.1, 1, 10, 100, 1000],
+        "model__l1_ratio":[0.0,0.1, 0.25, 0.5, 0.75, 1.0]
+    })
+}
+
+rows=[]
+y2 = myData2["Salary"]
+
+#help with gpt
+for fs_name, cols in features.items():
+    x2 = myData2[cols].copy()
+    for mname, (estimate, grid) in models.items():
+        mse, params = model_compare(estimate, x2, y2, grid)
+        rows.append({"Features": fs_name, "Model":mname, "MSE": mse, "Best Parameters": params})
+
+results = pd.DataFrame(rows).sort_values("MSE").reset_index(drop=True)
+
+print(results)
+```
+
+Based on the results, the best configuration was Lasso Regression that used the five best numerical variables and categorical interactions with an alpha of 10. This because it had the lowest MSE of 122832.242324 compared to the others. 
+
+Part III. Discussion
+A. Ridge...
+When comparing the Ridge model to the OLS, it can be seen that there are is a large difference in the coefficients. This is due to the penalty that the ridge model puts on which makes it so that you see that the Ridge model Coefficients are much larger. This is done to help reduce overfitting.
+
+
+B. Lasso...
+The Lasso Model from Part 1 was not the same as from Lasso model from Part 2. This is due to the models using a different lambda, which also had a different MSE as well. This is because you use a different set of features/predictors, which would change the overall values. 
+
+C. Elastic Net...
+The Elastic Net model had to closets MSE to the best Lasso models that was found. This makes sense because it essentially combines both the properties of Ridge and Lasso penalties. This makes it so that elastic "wins" overall because it adapts better giving a better, lower MSE. 
+
+Part IV. Final Model
+
+```{python}
+x = myData.drop(columns=["Salary"]).copy()
+y = myData["Salary"].copy()
+
+
+FinalLassoModel, numeric_col, dummy_col = create_penalized_pipeline(Lasso(alpha=10, max_iter=10000),x)
+FinalLassoModel.fit(x,y)
+
+predict_y = FinalLassoModel.predict(x)
+
+myData3 = myData.copy()
+myData3["actual"] = y
+myData3["predicted"] = predict_y
+myData3["residuals"] = myData3["actual"]-myData3["predicted"]
+
+(ggplot(myData3, aes(x="predicted",y="residuals"))
+    +geom_point(alpha=.75)
+    +geom_hline(yintercept = 0, color = "orange")
+    +labs(title="Residuals Plot LASSO Model with alpha 10", x="predicted salary", y="residuals")
+    +theme_bw()
+)
+```
+
+The Final Lasso Model with a alpha of 10 and the usage of the 5 numerical variables and the categorical variable with interaction shows that the residuals remain alongside 0. This shows that the model is mostly stable albeit have a few outliers. This suggests that the model captures most of the variation in the salary. 

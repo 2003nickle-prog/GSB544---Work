@@ -1,0 +1,129 @@
+---
+title: "8.2"
+author: Nicholas Le
+format: html
+embed-resources: true
+toc: true
+---
+
+
+```{python}
+!pip install palmerpenguins
+```
+
+
+```{python}
+from palmerpenguins import load_penguins
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, classification_report, roc_auc_score, roc_curve
+from plotnine import *
+import pandas as pd
+import numpy as np
+```
+
+
+```{python}
+penguins = load_penguins()
+penguins = penguins.dropna()
+penguins.head()
+
+y = penguins['species']
+x = penguins.drop("species",axis=1)
+
+x = pd.get_dummies(x, drop_first=True)
+x.head()
+```
+
+
+```{python}
+x_train, x_test, y_train, y_test = train_test_split(x, y, random_state=42, test_size=0.25, stratify=y)
+scaler = StandardScaler()
+scaler.fit(x_train)
+x_train_scaled = scaler.transform(x_train)
+x_test_scaled = scaler.transform(x_test)
+
+models ={
+    "KNN (k=5)": KNeighborsClassifier(n_neighbors=5),
+    "KNN (k=10)": KNeighborsClassifier(n_neighbors=10),
+    "Decision Tree (alpha = 0.5)": DecisionTreeClassifier(ccp_alpha=0.005, random_state=42),
+    "Decision Tree (alpha = 1)": DecisionTreeClassifier(ccp_alpha=0.01, random_state=42)
+}
+model_result={}
+```
+
+
+```{python}
+from sklearn.preprocessing import LabelEncoder
+
+all_model_results = {}
+le = LabelEncoder()
+le.fit(y_train)
+
+for name, model in models.items():
+    model.fit(x_train_scaled, y_train)
+
+    y_pred = model.predict(x_test_scaled)
+    y_prob = model.predict_proba(x_test_scaled)
+
+    cm = confusion_matrix(y_test, y_pred)
+
+    print(f"\n--- {name} ---")
+#CM
+    print("Confusion Matrix")
+    print(cm)
+
+    class_report = classification_report(y_test, y_pred, output_dict=True)
+    print("Classification Report:")
+    print(class_report)
+
+    y_test_encoded = le.transform(y_test)
+    auc = roc_auc_score(y_test_encoded, y_prob, multi_class="ovr")
+    print("AUC:")
+    print(auc)
+
+    all_model_results[name] = {
+        "Confusion Matrix": cm,
+        "Classification Report": class_report,
+        "AUC": auc
+    }
+
+```
+
+
+```{python}
+
+
+from sklearn.metrics import roc_curve
+
+
+chosen_species = "Chinstrap"
+chosen_model = models["KNN (k=5)"]
+chosen_model.fit(x_train_scaled, y_train)
+y_prob = chosen_model.predict_proba(x_test_scaled)
+class_index = list(chosen_model.classes_).index(chosen_species)
+
+y_true_binary = (y_test == chosen_species).astype(int)
+y_score = y_prob[:, class_index]
+fpr, tpr, thresholds = roc_curve(y_true_binary, y_score)
+
+roc_df = pd.DataFrame({
+    "FPR": fpr,
+    "TPR": tpr
+})
+
+roc_plot = (
+    ggplot(roc_df, aes(x="FPR", y="TPR"))
+    + geom_line()
+    + geom_abline(slope=1, intercept=0, linetype="dashed")
+    + labs(
+        title=f"ROC Curve for {chosen_species} (KNN k=5)",
+        x="False Positive Rate",
+        y="True Positive Rate"
+    )
+)
+
+roc_plot
+```
