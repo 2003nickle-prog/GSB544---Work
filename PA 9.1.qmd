@@ -1,0 +1,131 @@
+---
+title: "PA 9.1"
+author: Nicholas Le
+format: html
+embed-resources: true
+toc: true
+---
+
+1. Logistic Regression
+```{python}
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import *
+from sklearn.linear_model import *
+from sklearn.svm import *
+from sklearn.discriminant_analysis import *
+from sklearn.metrics import *
+from plotnine import *
+df = pd.read_csv("https://www.dropbox.com/scl/fi/0vrpdnq5asmeulc4gd50y/ha_1.csv?rlkey=ciisalceotl77ffqhqe3kujzv&dl=1")
+df
+(ggplot(df, aes(x="age", y="chol", color="diagnosis"))
++ geom_point())
+```
+
+
+```{python}
+df[["age", "chol"]].describe()
+```
+
+
+```{python}
+df["age_std"] = (df["age"] - df["age"].mean()) / df["age"].std()
+df["chol_std"] = (df["chol"] - df["chol"].mean()) / df["chol"].std()
+
+(ggplot(df, aes(x="age_std", y="chol_std", color="diagnosis"))
++ geom_point())
+```
+
+
+```{python}
+x = df[['age', 'chol']]
+y = df['diagnosis']
+x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.30, random_state=42)
+lr = LogisticRegression()
+lr.fit(x_train, y_train)
+
+y_pred=lr.predict(x_test)
+print(classification_report(y_test, y_pred))
+print(confusion_matrix(y_test,y_pred))
+print("Model Coef:",lr.coef_)
+print("Intercept:",lr.intercept_)
+```
+
+
+```{python}
+b0 = lr.intercept_[0]
+b_age, b_chol = lr.coef_[0]
+age_value = 55
+target_prob = 0.90
+logit_target = np.log(target_prob / (1 - target_prob))
+chol_90 = (logit_target - b0 - b_age * age_value) / b_chol
+chol_90
+```
+
+2. Linear Discriminant Analysis
+```{python}
+lda = LinearDiscriminantAnalysis()
+lda.fit(x_train, y_train)
+y_pred=lda.predict(x_test)
+print(classification_report(y_test, y_pred))
+print(confusion_matrix(y_test,y_pred))
+print("Model Coef:",lda.coef_)
+print("Intercept:",lda.intercept_)
+```
+
+3. Support Vector Classifier
+```{python}
+param_grid = {'C': [0.1, 1, 10, 100, 1000]}
+svc = SVC(kernel="linear")
+grid = GridSearchCV(svc, param_grid, refit = True, cv = 5)
+grid.fit(x_train, y_train)
+best_svc = grid.best_estimator_
+print(best_svc)
+y_pred=best_svc.predict(x_test)
+print(classification_report(y_test, y_pred))
+print(confusion_matrix(y_test,y_pred))
+
+print("SVC Coef:", best_svc.coef_)
+print("SVC Intercept:", best_svc.intercept_)
+```
+
+4. Comparing Decision Boundaries
+```{python}
+from plotnine import *
+
+ages = np.linspace(df.age.min(),df.age.max(), 200)
+
+b0_log = lr.intercept_[0]
+b_age_log, b_chol_log = lr.coef_[0]
+log_line = -(b0_log + b_age_log * ages) / b_chol_log
+
+b0_lda = lda.intercept_[0]
+b_age_lda, b_chol_lda = lda.coef_[0]
+lda_line = -(b0_lda + b_age_lda * ages) / b_chol_lda
+
+b0_svc = best_svc.intercept_[0]
+b_age_svc, b_chol_svc = best_svc.coef_[0]
+svc_line = -(b0_svc + b_age_svc * ages) / b_chol_svc
+
+boundaries = pd.DataFrame({
+    "age": np.hstack([ages, ages, ages]),
+    "chol": np.hstack([log_line, lda_line, svc_line]),
+    "model": (["Logistic"]*len(ages)) +
+             (["LDA"]*len(ages)) +
+             (["SVC (C=0.1)"]*len(ages))
+})
+
+(
+    ggplot(df, aes('age', 'chol', color='diagnosis')) +
+    geom_point(size=3, alpha=0.7) +
+    geom_line(boundaries, aes('age', 'chol', linetype='model', color='model'), size=1) +
+    labs(
+        title="Age vs Cholesterol",
+        x="Age",
+        y="Cholesterol",
+        color="Legend",
+        linetype="Model"
+    ) +
+    theme_minimal()
+)
+```
