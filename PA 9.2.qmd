@@ -1,0 +1,166 @@
+---
+title: "PA 9.2"
+author: Nicholas Le
+format: html
+embed-resources: true
+toc: true
+---
+
+
+```{python}
+import pandas as pd
+from sklearn.pipeline import *
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import *
+from sklearn.model_selection import *
+from sklearn.discriminant_analysis import *
+
+from sklearn.preprocessing import *
+from sklearn.metrics import *
+
+from sklearn.linear_model import LogisticRegression
+ha = pd.read_csv("https://www.dropbox.com/s/aohbr6yb9ifmc8w/heart_attack.csv?dl=1")
+```
+
+Q1: Natural Multiclass Models
+```{python}
+x = ha[["age", "sex", "trtbps", "chol", "restecg", "thalach", "output"]]
+y= ha["cp"]
+x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3,random_state=42,stratify=y)
+
+knn = make_pipeline(
+    StandardScaler(),
+    KNeighborsClassifier(n_neighbors=5)
+)
+
+knn.fit(x_train, y_train)
+y_pred_knn = knn.predict(x_test)
+print(classification_report(y_test, y_pred_knn))
+print(confusion_matrix(y_test, y_pred_knn))
+
+```
+
+
+```{python}
+dtree = make_pipeline(
+    StandardScaler(),
+    DecisionTreeClassifier(max_depth=4,random_state=42)
+)
+dtree = dtree.fit(x_train, y_train)
+dtree_pred = dtree.predict(x_test)
+print(classification_report(y_test, dtree_pred))
+print(confusion_matrix(y_test, dtree_pred))
+print(dtree.named_steps['decisiontreeclassifier'].feature_importances_)
+```
+
+
+```{python}
+from plotnine import *
+
+split_nodes = []
+
+def trace_splits(node=0, depth=0):
+    dtree_estimator = dtree.named_steps["decisiontreeclassifier"]
+    if dtree_estimator.tree_.feature[node] != -2:
+        feat = x_train.columns[dtree_estimator.tree_.feature[node]]
+        th = dtree_estimator.tree_.threshold[node]
+        split_nodes.append([depth, feat, th])
+        trace_splits(dtree_estimator.tree_.children_left[node], depth + 1)
+        trace_splits(dtree_estimator.tree_.children_right[node], depth + 1)
+
+trace_splits()
+df_tree = pd.DataFrame(split_nodes, columns=["depth", "feature", "cutoff"])
+
+(
+    ggplot(df_tree, aes("depth", "cutoff", label="feature")) +
+    geom_point(size=4) +
+    geom_text(nudge_y=0.35, size=9) +
+    labs(
+        title="Decision Tree Split Overview",
+        x="Depth Level",
+        y="Split Cutoff"
+    ) +
+    theme_minimal()
+)
+```
+
+
+```{python}
+lda = make_pipeline(
+    StandardScaler(),
+    LinearDiscriminantAnalysis()
+)
+lda.fit(x_train, y_train)
+y_pred_lda = lda.predict(x_test)
+print(classification_report(y_test, y_pred_lda))
+print(confusion_matrix(y_test, y_pred_lda))
+lda.named_steps['lineardiscriminantanalysis'].coef_
+lda.named_steps['lineardiscriminantanalysis'].intercept_
+```
+
+Q2: OvR
+
+
+```{python}
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import f1_score
+
+features = ["age", "sex", "trtbps", "chol", "restecg", "thalach", "output"]
+X_cp = ha[features]
+
+def chest_pain_f1(target_cp):
+    y_cp = (ha["cp"] == target_cp).astype(int)
+    X_tr, X_te, y_tr, y_te = train_test_split(
+        X_cp, y_cp,
+        test_size=0.3,
+        random_state=42,
+        stratify=y_cp
+    )
+
+    logit = LogisticRegression(max_iter=5000)
+    logit.fit(X_tr, y_tr)
+
+    y_pred = logit.predict(X_te)
+    score = f1_score(y_te, y_pred)
+
+    return score
+f1_cp0 = chest_pain_f1(0)
+f1_cp1 = chest_pain_f1(1)
+f1_cp2 = chest_pain_f1(2)
+f1_cp3 = chest_pain_f1(3)
+
+(f1_cp0, f1_cp1, f1_cp2, f1_cp3)
+```
+
+Q3: OvO
+```{python}
+feature_cols = ["age", "sex", "trtbps", "chol", "restecg", "thalach", "output"]
+
+def ovo_auc(cp_ref, cp_comp):
+    data_pair = ha[ha["cp"].isin([cp_ref, cp_comp])].copy()
+    data_pair["y_bin"] = (data_pair["cp"] == cp_comp).astype(int)
+
+    X_pair = data_pair[feature_cols]
+    y_pair = data_pair["y_bin"]
+
+    X_tr, X_te, y_tr, y_te = train_test_split(
+        X_pair,
+        y_pair,
+        test_size=0.3,
+        random_state=42,
+        stratify=y_pair
+    )
+
+    log_model = LogisticRegression(max_iter=5000)
+    log_model.fit(X_tr, y_tr)
+
+    y_scores = log_model.predict_proba(X_te)[:, 1]
+    return roc_auc_score(y_te, y_scores)
+
+auc_01 = ovo_auc(0, 1)
+auc_02 = ovo_auc(0, 2)
+auc_03 = ovo_auc(0, 3)
+
+auc_01, auc_02, auc_03
+```
