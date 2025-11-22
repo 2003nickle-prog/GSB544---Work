@@ -1,0 +1,313 @@
+---
+title: "Lab 7"
+author: Nicholas Le
+format: html
+embed-resources: true
+toc: true
+---
+
+
+```{python}
+import pandas as pd
+myHeart= pd.read_csv("https://www.dropbox.com/s/aohbr6yb9ifmc8w/heart_attack.csv?dl=1")
+myHeart
+```
+
+
+```{python}
+import numpy as np
+from plotnine import *
+
+from sklearn.model_selection import StratifiedKFold, GridSearchCV, cross_val_predict, cross_val_score,  train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import ConfusionMatrixDisplay,recall_score,confusion_matrix,roc_auc_score,  precision_score,roc_curve
+     
+```
+
+
+```{python}
+myHeart.isna().sum()
+myHeart = myHeart.dropna()
+x = myHeart.drop(columns=["output"])
+y = myHeart["output"]
+```
+
+
+```{python}
+x_train, x_test, y_train, y_test =train_test_split(x,y, test_size=0.2, random_state=42, stratify=y)
+cv = StratifiedKFold(n_splits = 5, shuffle = True, random_state=42)
+```
+
+
+```{python}
+def model_test (model, model_name):
+    model.fit(x_train, y_train)
+    y_test_predict = model.predict(x_test)
+    y_test_prob=model.predict_proba(x_test)[:,1]
+    cm = confusion_matrix(y_test,y_test_predict)
+    auc = roc_auc_score(y_test, y_test_prob)
+
+    print(f"{model_name}: ")
+    print("Test ROC AUC: ", {auc})
+    print("Test Confusion Matrix: ")
+    print(cm)
+    return y_test_prob
+
+```
+
+Part One: Fitting Models
+Q1: KNN
+
+```{python}
+
+k_range = list(range(1,20))
+k_result = []
+
+for k in k_range:
+    pipe = Pipeline([
+        ("scaler", StandardScaler()),
+        ("knn",KNeighborsClassifier(n_neighbors = k))
+    ])
+    cv_auc = cross_val_score(pipe, x_train, y_train, scoring="roc_auc",cv=5).mean()
+    k_result.append((k,cv_auc))
+k_result
+
+
+best_k, best_auc = max(k_result, key=lambda x:x[1])
+
+print("Best K:",best_k)
+print("Best AUC:",best_auc)
+
+knn_pipe = Pipeline([
+    ("scaler", StandardScaler()),
+    ("knn", KNeighborsClassifier(n_neighbors=best_k))
+])
+
+knn_final_probability = model_test(knn_pipe, "knn")
+```
+
+Testing k values between 1 - 19, I found that the best k value was k = 15, which a CV AUC of 0.87196, which shows a strong performance for the training. After using fitting the final model, I found that the test ROC AUC had a value of 0.7069. However the different bewtween the CV AUC and the Test ROC AUC shows that the model does not do as strongly as other models might. 
+
+
+
+Q2: Logistic Regression
+
+```{python}
+c_range =[0.001,0.01, 0.1,1,10,100]
+log_result=[]
+
+for c in c_range:
+    pipe = Pipeline([
+        ("scaler", StandardScaler()),
+        ("logreg",LogisticRegression(C=c, max_iter=10000))
+    ])
+    cv_auc = cross_val_score(pipe, x_train, y_train, scoring="roc_auc",cv=5).mean()
+    log_result.append((c,cv_auc))
+log_result
+
+best_c, best_log_auc = max(log_result, key=lambda x:x[1])
+
+
+print("Best C:",best_c)
+print("Best AUC:",best_log_auc)
+
+lr_pipe = Pipeline([
+    ("scaler", StandardScaler()),
+    ("logreg",LogisticRegression(C=best_c, max_iter=10000))
+])
+
+logr_final_probability = model_test(lr_pipe, "logistic regression")
+```
+
+Testing the values for c between 0.001 - 100, I found that the best c value was 0.01, which had a CV AUC of 0.8645, which shows a strong and stable peformance during training. After the final model, the test ROC AUC was 0.79576, which is closer to the actual value of the CV AUC than the KNN model. 
+
+
+Q3: Decision Tree
+
+```{python}
+depth_range =[2,3,4, 5,6,7,8,9,10]
+dtree_result=[]
+
+for d in depth_range:
+    pipe = Pipeline([
+        ("d_tree", DecisionTreeClassifier(max_depth=d, random_state =42))
+    ])
+    cv_auc = cross_val_score(pipe, x_train, y_train, scoring="roc_auc",cv=5).mean()
+    dtree_result.append((d,cv_auc))
+log_result
+
+best_depth, best_tree_auc = max(dtree_result, key=lambda x:x[1])
+
+
+print("Best C:",best_depth)
+print("Best AUC:",best_tree_auc)
+
+dtree_pipe = Pipeline([
+    ("d_tree", DecisionTreeClassifier(max_depth=best_depth, random_state =42))
+])
+
+dtree_final_probability = model_test(dtree_pipe, "decision tree")
+```
+
+Testing between the max depth value of 2 - 10, I found that the best depth was a depth value of 4, which had a CV AUC of 0.78027, showing a moderate perforance during training as compared to the other models. However the different bewtween the CV AUC and the Test ROC AUC shows that the model does not do as strongly as other models might, with KNN and Logistic Regression seemingly better models. 
+
+Q4: Interpretation
+
+```{python}
+log_coef= lr_pipe.named_steps["logreg"].coef_[0]
+
+log_coef_table =pd.DataFrame({
+    "feature": x.columns,
+    "coefficient": log_coef,
+    "absolute_coefficient": np.abs(log_coef)
+}).sort_values("absolute_coefficient",ascending=False)
+
+log_coef_table
+```
+
+The most important predictors for the Logistic Regression model, was thalach and cp, as both had strong positive coefficients, which means that these factors better predict someone who might be at high risk of an attack. Sex and age also play as moderate predictors. 
+
+```{python}
+dtree_importance= dtree_pipe.named_steps["d_tree"].feature_importances_
+
+dt_importance_table =pd.DataFrame({
+    "feature": x.columns,
+    "importance": dtree_importance
+}).sort_values("importance",ascending=False)
+
+dt_importance_table
+```
+
+The most important varaible. for the Decision Tree model were cp, which a value of 0.446, this means that the model used that variable most when making splits. Additionally Thalach and age also were important to the model as well. 
+
+Q5: ROC Curve
+
+```{python}
+from sklearn.metrics import RocCurveDisplay
+import matplotlib.pyplot as plt
+fig,ax=plt.subplots(figsize=(5,5))
+ax.plot([0,1],[0,1],"--",color="red")
+
+RocCurveDisplay.from_estimator(knn_pipe, x_test, y_test, ax=ax,name="KNN")
+RocCurveDisplay.from_estimator(lr_pipe, x_test, y_test, ax=ax, name= "Logistic Regression")
+RocCurveDisplay.from_estimator(dtree_pipe, x_test, y_test, ax=ax,name= "Decision Tree")
+
+plt.title("Model ROC")
+plt.show()
+
+```
+
+Part Two: Metrics
+KNN Metrics
+```{python}
+from sklearn.metrics import make_scorer, recall_score, precision_score
+
+recall_scoring = make_scorer(recall_score, pos_label=1) 
+precision_scoring  = make_scorer(precision_score, pos_label=1)
+specificity_scoring  = make_scorer(recall_score, pos_label=0)
+
+def computation(model, model_name):
+    recall= cross_val_score(model, x_train,y_train, cv=cv, scoring=recall_scoring).mean()
+    precision =cross_val_score(model, x_train, y_train, cv=cv, scoring=precision_scoring).mean()
+    specificity=cross_val_score(model,x_train, y_train, cv=cv,scoring=specificity_scoring).mean()
+
+    print(f"{model_name}: ")
+    print(f"Recall: ",recall)
+    print(f"Precision: ",precision)
+    print(f"Specificity: ",specificity)
+    print("")
+
+computation(knn_pipe,"knn")
+computation(lr_pipe,"logistic regression")
+computation(dtree_pipe,"decision tree")
+
+```
+
+The Logistic Regression model best showed recall/sensitivity with a value of 0.914, meaning that it would correctly identify the largest proportion of real high risk paitents. 
+
+The KNN model best showed precision with a value of 0.7655, meanin that what it identifies patients as high risk, it is more correct than other models. 
+
+The Decision Tree model best showed specificity with a value of 0.7338, meaning it was the most accurate in identifying patients who are not at risk. 
+
+Part Three: Discussion
+Q1:
+I would use Recall/Sensitivity, as missing high-risk patients would be more a serious matter for the hospital. I would use a logistic regression model, as the recall value was 0.914, which means it is the most true when identifying high risk cases. I would expect to achieve about 0.914 recall on patients in the future. 
+
+Q2:
+I would use Precision, as admitting low-risk patients by mistake would leave high-risk patients unable to be treated due to lack of space. I would use a KNN model, as it has the highest precision amongst the other models. It has a precision value of 0.765, which means its more accurate when predicing the true high-risk patients. I would expect to have about a 0.765 precision for patients in the future. 
+
+Q3:
+I would use a Logistic Regression Model as it clearly shows the variables and its coefficients to show which factors are the most impactful with high-risk patients. I would expect to have a 0.80 ROC AUC on future patients observations.
+
+Q4:
+To compare the diagnoses from the newer doctors for patients, I would use the Logistic Regression Model. As seen in the ROC Curves graph, the Logistic Regression model shows the best overall trend. This means that it has the best AUC.  
+
+
+Part Four: Validation
+
+```{python}
+myHeartVal = pd.read_csv("https://www.dropbox.com/s/jkwqdiyx6o6oad0/heart_attack_validation.csv?dl=1")
+x_val = myHeartVal.drop(columns=["output"])
+y_val = myHeartVal["output"]
+
+def model_validation (model, model_name):
+    predict = model.predict(x_val)
+    probability = model.predict_proba(x_val)[:,1]
+    cm = confusion_matrix(y_val,predict)
+    auc = roc_auc_score(y_val, probability)
+    precision= precision_score(y_val,predict)
+    recall= recall_score(y_val,predict)
+
+    print(f"{model_name}: ")
+    print("Test ROC AUC: ", {auc})
+    print("Test Confusion Matrix: ")
+    print(cm)
+    print("Precision: ",precision)
+    print("Recall: ",recall)
+    print("======================================")
+
+
+model_validation(knn_pipe, "knn")
+model_validation(lr_pipe, "logistic regression")
+model_validation(dtree_pipe, "decision tree")
+
+```
+
+KNN: 
+For KNN, its ROC AUC was 0.940, showing the model to have the highest validation. It has a precision of 0.923, but a recall of 0.632. This shows that the model continues to miss more high-risk patients than desired. 
+
+Logistic Regression: 
+For Logistic Regression, its ROC AUC was 0.9234 and a recall of 0.789. This shows that the model seems to be balanced and generally stable compared to other models. 
+
+Decision Tree:
+For Decision Tree, its ROC AUC was 0.7990, the precision is 0.933, and the recall was 0.737, which was similar to Part 1. 
+
+Overall, Logistic Regression seems to be the most consistent.
+
+Part Five: Cohen’s Kappa
+
+```{python}
+from sklearn.metrics import cohen_kappa_score
+
+knn_preds  = knn_pipe.predict(x_val)
+lr_preds   = lr_pipe.predict(x_val)
+dtree_preds = dtree_pipe.predict(x_val)
+
+kappa_knn  = cohen_kappa_score(y_val, knn_preds)
+kappa_lr   = cohen_kappa_score(y_val, lr_preds)
+kappa_dtree = cohen_kappa_score(y_val, dtree_preds)
+
+print("KNN Kappa: ",kappa_knn)
+print("======================================")
+print("Logistic Regression Kappa: ",kappa_lr)
+print("======================================")
+print("Decision Tree Kappa: ",kappa_dtree)
+print("======================================")
+
+```
+
+Cohen's Kappa seems useful when one class is more common than the other classes, meaning when the classes are imbalanced. My results from Kappa show 0.485 (KNN), 0.585 (Logistic Regression), and 0.6 (Decision Tree). Although the values show a differences, it does not change my conclusion that logistic regression is the most reliable, since its more consistent and stable as shown with its high ROC AUC. 
