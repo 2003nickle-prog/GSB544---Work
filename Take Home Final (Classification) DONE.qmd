@@ -1,0 +1,278 @@
+---
+title: "Take Home: Classification"
+format: html
+author: Nicholas Le
+format: html
+embed-resources: true
+toc: true
+---
+
+
+```{python}
+import pandas as pd
+from matplotlib.pyplot import *
+import numpy as np
+
+from sklearn.svm import *
+from sklearn.tree import *
+from sklearn.neighbors import *
+
+from sklearn.model_selection import *
+from sklearn.discriminant_analysis import *
+from sklearn.compose import *
+from sklearn.preprocessing import *
+from sklearn.impute import *
+from sklearn.linear_model import *
+from sklearn.pipeline import *
+from sklearn.metrics import *
+import warnings
+warnings.filterwarnings("ignore")
+
+myTrain = pd.read_csv(r"C:\Users\2003n\OneDrive - Cal Poly\Desktop\TakeHomeML\Classification\CAH-201803-train.csv")
+myTest  = pd.read_csv(r"C:\Users\2003n\OneDrive - Cal Poly\Desktop\TakeHomeML\Classification\CAH-201803-test.csv")
+
+myTrain.head()
+
+```
+
+
+```{python}
+X = myTrain.drop(["political_affiliation"], axis=1)
+y = myTrain["political_affiliation"]
+
+X = X.drop(columns=["id_num"])
+test_X = myTest.drop(columns=["id_num"])
+
+numeric_features = X.select_dtypes(include=["int64", "float64"]).columns.tolist()
+categorical_features = X.select_dtypes(include=["object", "category", "bool"]).columns.tolist()
+
+print("Numeric features:", numeric_features)
+print("Categorical features:", categorical_features)
+
+```
+
+
+```{python}
+numeric_transformer = Pipeline([
+    ("imputer", SimpleImputer(strategy="median")),
+    ("scale", StandardScaler())
+])
+
+categorical_transformer = Pipeline([
+    ("imputer", SimpleImputer(strategy="most_frequent")),
+    ("onehot", OneHotEncoder(handle_unknown="ignore"))
+])
+
+preprocessing = ColumnTransformer(
+    transformers=[
+        ("numerical", numeric_transformer, numeric_features),
+        ("categorical", categorical_transformer, categorical_features)
+    ]
+)
+
+cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=321)
+scoring_metric = "accuracy"
+
+```
+
+
+```{python}
+logistic_pipe = Pipeline([
+    ("preprocess", preprocessing),
+    ("model", LogisticRegression(max_iter=2000, multi_class="auto"))
+])
+
+logistic_param_grid = {
+    "model__C": [0.01, 0.1, 1, 10],
+    "model__penalty": ["l2"],
+    "model__solver": ["lbfgs"]
+    #parameters helped with gpt
+}
+
+logistic_grid = GridSearchCV(estimator=logistic_pipe,param_grid=logistic_param_grid, cv=cv,scoring=scoring_metric,refit=True,n_jobs=-1)
+
+logistic_grid.fit(X, y)
+print("Logistic Regression")
+print("Best Logistic Params:", logistic_grid.best_params_)
+print("Best Logistic CV Accuracy:", logistic_grid.best_score_)
+
+```
+
+
+```{python}
+lda_pipe = Pipeline([
+    ("preprocess", preprocessing),
+    ("model", LinearDiscriminantAnalysis())
+])
+
+lda_param_grid = {}
+
+lda_grid = GridSearchCV(estimator=lda_pipe,param_grid=lda_param_grid, cv=cv, scoring=scoring_metric, refit=True,n_jobs=-1
+)
+
+lda_grid.fit(X, y)
+print("LDA")
+print("Best LDA Params:", lda_grid.best_params_)
+print("Best LDA CV Accuracy:", lda_grid.best_score_)
+
+```
+
+
+```{python}
+qda_pipe = Pipeline([
+    ("preprocess", preprocessing),
+    ("model", QuadraticDiscriminantAnalysis())
+])
+
+qda_param_grid = {
+    "model__reg_param": [0.0, 0.01, 0.1, 0.5]
+}
+
+qda_grid = GridSearchCV(estimator=qda_pipe,param_grid=qda_param_grid,cv=cv,scoring=scoring_metric, refit=True,n_jobs=-1
+)
+
+qda_grid.fit(X, y)
+print("QDA")
+print("Best QDA Params:", qda_grid.best_params_)
+print("Best QDA CV Accuracy:", qda_grid.best_score_)
+
+```
+
+
+```{python}
+knn_pipe = Pipeline([
+    ("preprocess", preprocessing),
+    ("model", KNeighborsClassifier())
+])
+
+knn_param_grid = {
+    "model__n_neighbors": [3, 5, 7, 9, 11, 15],
+    "model__weights": ["uniform", "distance"],
+    "model__p": [1, 2]
+    
+}
+
+knn_grid = GridSearchCV( estimator=knn_pipe, param_grid=knn_param_grid,cv=cv,scoring=scoring_metric,refit=True, n_jobs=-1)
+
+
+knn_grid.fit(X, y)
+print("KNN Classifier")
+print("Best KNN Params:", knn_grid.best_params_)
+print("Best KNN CV Accuracy:", knn_grid.best_score_)
+
+```
+
+
+```{python}
+tree_pipe = Pipeline([
+    ("preprocess", preprocessing),
+    ("model", DecisionTreeClassifier(random_state=420))
+])
+
+tree_param_grid = {
+    "model__max_depth": [None, 5, 10, 20, 30],
+    "model__min_samples_split": [2, 5, 10, 20],
+    "model__min_samples_leaf": [1, 2, 4, 8],
+    "model__min_impurity_decrease": [0.0, 0.0001, 0.001]
+}
+
+tree_grid = GridSearchCV(estimator=tree_pipe, param_grid=tree_param_grid,  cv=cv, scoring=scoring_metric, refit=True,n_jobs=-1
+)
+
+tree_grid.fit(X, y)
+print("Decision Tree Classifier")
+print("Best Tree Params:", tree_grid.best_params_)
+print("Best Tree CV Accuracy:", tree_grid.best_score_)
+
+```
+
+
+```{python}
+svc_pipe = Pipeline([
+    ("preprocess", preprocessing),
+    ("model", LinearSVC(random_state=420))
+])
+
+svc_param_grid = {
+    "model__C": [0.01, 0.1, 1, 10]
+}
+
+svc_grid = GridSearchCV(estimator=svc_pipe,param_grid=svc_param_grid, cv=cv, scoring=scoring_metric,refit=True, n_jobs=-1)
+
+svc_grid.fit(X, y)
+print("Linear SVC")
+print("Best SVC Params:", svc_grid.best_params_)
+print("Best SVC CV Accuracy:", svc_grid.best_score_)
+
+```
+
+
+```{python}
+logistic_cv_acc = logistic_grid.best_score_
+lda_cv_acc = lda_grid.best_score_
+qda_cv_acc= qda_grid.best_score_
+knn_cv_acc = knn_grid.best_score_
+tree_cv_acc= tree_grid.best_score_
+svc_cv_acc = svc_grid.best_score_
+
+cv_scores = {
+    "Logistic": logistic_cv_acc,
+    "LDA": lda_cv_acc,
+    "QDA": qda_cv_acc,
+    "KNN": knn_cv_acc,
+    "Tree": tree_cv_acc,
+    "SVC": svc_cv_acc
+}
+
+print("\nSummary of CV Accuracy:")
+for name, score in cv_scores.items():
+    print(f"{name}: {score:.4f}")
+
+best_model_name = max(cv_scores, key=cv_scores.get)
+print("\nBest model by CV:", best_model_name)
+
+```
+
+
+```{python}
+best_logistic = logistic_grid.best_estimator_
+best_lda = lda_grid.best_estimator_
+best_qda = qda_grid.best_estimator_
+best_knn = knn_grid.best_estimator_
+best_tree = tree_grid.best_estimator_
+best_svc = svc_grid.best_estimator_
+
+best_models = {
+    "Logistic": best_logistic,
+    "LDA": best_lda,
+    "QDA": best_qda,
+    "KNN": best_knn,
+    "Tree": best_tree,
+    "SVC": best_svc
+}
+
+final_model = best_models[best_model_name]
+print("\nSelected final model:", best_model_name)
+
+```
+
+
+```{python}
+final_model.fit(X, y)
+
+test_features = test_X[X.columns]
+
+test_preds = final_model.predict(test_features)
+
+print(pd.Series(test_preds).value_counts())
+
+submission = pd.DataFrame({
+    "id_num": myTest["id_num"],
+    "political_affiliation_predicted": test_preds
+})
+
+submission.to_csv("CAH_submission.csv", index=False)
+submission.head()
+
+```
+

@@ -1,0 +1,360 @@
+---
+title: "Take Home: Regression"
+format: html
+author: Nicholas Le
+format: html
+embed-resources: true
+toc: true
+---
+
+
+```{python}
+import pandas as pd
+from matplotlib.pyplot import *
+import numpy as np
+
+from sklearn.svm import *
+from sklearn.tree import *
+from sklearn.neighbors import *
+
+from sklearn.model_selection import *
+from sklearn.discriminant_analysis import *
+from sklearn.compose import *
+from sklearn.preprocessing import *
+from sklearn.impute import *
+from sklearn.linear_model import *
+from sklearn.ensemble import *
+from sklearn.pipeline import *
+from sklearn.metrics import *
+import warnings
+warnings.filterwarnings("ignore") 
+```
+
+Take Home Final: Kaggle Regression
+```{python}
+myTrain = pd.read_csv(r"C:\Users\2003n\OneDrive - Cal Poly\Desktop\TakeHomeML\train_new.csv")
+myTest = pd.read_csv(r"C:\Users\2003n\OneDrive - Cal Poly\Desktop\TakeHomeML\test_new.csv")
+```
+
+```{python}
+#Feature engineering - helped with gpt
+for df in [myTrain, myTest]:
+    if {"Yr Sold", "Year Built"}.issubset(df.columns):
+        df["HouseAge"] = df["Yr Sold"] - df["Year Built"]
+
+    if {"Full Bath", "Half Bath"}.issubset(df.columns):
+        df["TotalBath"] = df["Full Bath"].fillna(0) + 0.5 * df["Half Bath"].fillna(0)
+
+    if {"TotRms AbvGrd", "Bedroom AbvGr"}.issubset(df.columns):
+        df["RoomsPerBedroom"] = (
+            df["TotRms AbvGrd"] / np.maximum(df["Bedroom AbvGr"], 1)
+        )
+
+    if {"Gr Liv Area", "TotRms AbvGrd"}.issubset(df.columns):
+        df["AvgRoomSize"] = (
+            df["Gr Liv Area"] / np.maximum(df["TotRms AbvGrd"], 1)
+        )
+
+    if {"Lot Area", "TotRms AbvGrd"}.issubset(df.columns):
+        df["LotAreaPerRoom"] = (
+            df["Lot Area"] / np.maximum(df["TotRms AbvGrd"], 1)
+        )
+
+    if "Pool Area" in df.columns:
+        df["HasPool"] = (df["Pool Area"] > 0).astype(int)
+    if "Screen Porch" in df.columns:
+        df["HasScreenPorch"] = (df["Screen Porch"] > 0).astype(int)
+
+    for col, new_col in [
+        ("Lot Area", "log_LotArea"),
+        ("Gr Liv Area", "log_GrLivArea"),
+    ]:
+        if col in df.columns:
+            df[new_col] = np.log1p(df[col].clip(lower=0))
+```
+
+```{python}
+X = myTrain.drop(["SalePrice"], axis = 1)
+y = np.log1p(myTrain["SalePrice"]) 
+
+x = myTrain.drop(columns=["SalePrice", "PID"])
+x_test = myTest.drop(columns=["PID"])
+numeric_features = x.select_dtypes(include=["int64", "float64"]).columns.tolist()
+categorical_features = x.select_dtypes(include=["object", "category"]).columns.tolist()
+
+print("Numeric:", numeric_features)
+print("Categorical:", categorical_features)
+
+```
+
+
+```{python}
+x = myTrain.drop(columns=["SalePrice", "PID"])
+y_log = np.log1p(myTrain["SalePrice"])
+
+numeric_features = x.select_dtypes(include=["int64", "float64"]).columns.tolist()
+categorical_features = x.select_dtypes(include=["object", "category"]).columns.tolist()
+
+print("Numeric:", numeric_features)
+print("Categorical:", categorical_features)
+
+numeric_transformer = Pipeline([
+    ("imputer", SimpleImputer(strategy="median")),
+    ("scale", StandardScaler())
+])
+
+categorical_transformer = Pipeline([
+    ("imputer", SimpleImputer(strategy="most_frequent")),
+    ("onehot", OneHotEncoder(handle_unknown="ignore"))
+])
+
+preprocessing = ColumnTransformer(
+    transformers=[
+        ("numerical", numeric_transformer, numeric_features),
+        ("categorical", categorical_transformer, categorical_features)
+    ]
+)
+
+#helped with gpt
+def rmse_log(y_true, y_pred):
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+    return np.sqrt(np.mean((y_true - y_pred)**2))
+
+rmse_log_scorer = make_scorer(rmse_log, greater_is_better=False)
+
+cv = KFold(n_splits=5, shuffle=True, random_state=321)
+
+
+```
+
+
+```{python}
+linear_pipe = Pipeline([
+    ("preprocess", preprocessing),
+    ("model", LinearRegression())
+])
+
+linear_gridsearch = GridSearchCV(estimator=linear_pipe,param_grid={},  cv=cv,scoring=rmse_log_scorer,refit=True)
+
+linear_gridsearch.fit(x, y_log)
+
+print("Linear Regression")
+print("Best LR Params:", linear_gridsearch.best_params_)
+print("Best LR CV (neg RMSE_log):", linear_gridsearch.best_score_)
+print("Best LR CV RMSE_log:", -linear_gridsearch.best_score_)
+
+```
+
+
+
+```{python}
+ridge_pipe = Pipeline([
+    ("preprocess", preprocessing),
+    ("model", Ridge())
+])
+
+ridge_grid_param = {"model__alpha": [0.01, 0.1, 1, 10, 30, 50, 100]}
+
+ridge_gridsearch = GridSearchCV( estimator=ridge_pipe, param_grid=ridge_grid_param,cv=cv,scoring=rmse_log_scorer, refit=True
+)
+
+ridge_gridsearch.fit(x, y_log)
+print("Ridge Regression")
+print("Best Ridge Params:", ridge_gridsearch.best_params_)
+print("Best Ridge CV (neg RMSE_log):", ridge_gridsearch.best_score_)
+print("Best Ridge CV RMSE_log:", -ridge_gridsearch.best_score_)
+
+```
+
+
+```{python}
+lasso_pipe = Pipeline([
+    ("preprocess", preprocessing),
+    ("model", Lasso(max_iter=50000, tol=1e-3))
+])
+
+lasso_grid_param = {
+    "model__alpha": np.logspace(-4, 3, 20),
+    "model__fit_intercept": [True, False]
+}
+
+lasso_gridsearch = GridSearchCV(estimator=lasso_pipe, param_grid=lasso_grid_param, cv=cv, scoring=rmse_log_scorer,refit=True)
+
+lasso_gridsearch.fit(x, y_log)
+print("Lasso Regression")
+print("Best Lasso Params:", lasso_gridsearch.best_params_)
+print("Best Lasso CV (neg RMSE_log):", lasso_gridsearch.best_score_)
+print("Best Lasso CV RMSE_log:", -lasso_gridsearch.best_score_)
+```
+
+
+```{python}
+elastic_pipe = Pipeline([
+    ("preprocess", preprocessing),
+    ("model", ElasticNet(max_iter=30000, warm_start=True, random_state=420))
+])
+
+elastic_param_grid = {
+    "model__alpha":    np.logspace(-3, 1, 5),
+    "model__l1_ratio": [0.1, 0.3, 0.5, 0.7, 0.9] 
+}
+
+elastic_grid = GridSearchCV(estimator=elastic_pipe, param_grid=elastic_param_grid,cv=cv, scoring=rmse_log_scorer, refit=True,n_jobs=-1)
+
+elastic_grid.fit(x, y_log)
+print("Elastic Net Regression")
+print("Best ElasticNet Params:", elastic_grid.best_params_)
+print("Best ElasticNet CV (neg log-RMSE):", elastic_grid.best_score_)
+print("Best ElasticNet CV log-RMSE:", -elastic_grid.best_score_)
+
+```
+
+```{python}
+knn_pipe = Pipeline([
+    ("preprocess", preprocessing),
+    ("model", KNeighborsRegressor())
+])
+
+knn_param_grid = {
+    "model__n_neighbors": [3, 5, 7, 9, 11, 13, 15, 17],
+    "model__weights": ["uniform", "distance"],
+    "model__p": [1, 2]
+}
+
+knn_grid = GridSearchCV(estimator=knn_pipe,param_grid=knn_param_grid, cv=cv, scoring=rmse_log_scorer,refit=True, n_jobs=-1)
+
+knn_grid.fit(x, y_log)
+print("KNN Regression")
+print("Best KNN Params:", knn_grid.best_params_)
+print("Best KNN CV (neg log-RMSE):", knn_grid.best_score_)
+print("Best KNN CV log-RMSE:", -knn_grid.best_score_)
+
+```
+
+```{python}
+tree_pipe = Pipeline([
+    ("preprocess", preprocessing),
+    ("model", DecisionTreeRegressor(random_state=420))
+])
+
+tree_param_grid = {
+    "model__max_depth": [None, 5, 10, 20, 30],
+    "model__min_samples_split": [2, 5, 10, 20],
+    "model__min_samples_leaf": [1, 2, 4, 8],
+    "model__min_impurity_decrease": [0.0, 0.0001, 0.001]
+}
+
+tree_gridsearch = GridSearchCV(
+    estimator=tree_pipe,
+    param_grid=tree_param_grid,
+    cv=cv,
+    scoring=rmse_log_scorer,
+    refit=True,
+    n_jobs=-1
+)
+
+tree_gridsearch.fit(x, y_log)
+
+print("Decision Tree Regression")
+print("Best Tree Params:", tree_gridsearch.best_params_)
+print("Best Tree CV (neg RMSE_log):", tree_gridsearch.best_score_)
+print("Best Tree CV RMSE_log:", -tree_gridsearch.best_score_)
+
+```
+
+
+```{python}
+print("Best LR CV RMSE_log:", -linear_gridsearch.best_score_)
+
+print("Best Ridge CV RMSE_log:", -ridge_gridsearch.best_score_)
+print("Best Tree CV RMSE_log:", -tree_gridsearch.best_score_)
+
+print("Best Lasso CV RMSE_log:", -lasso_gridsearch.best_score_)
+
+print("Best ElasticNet CV log-RMSE:", -elastic_grid.best_score_)
+
+print("Best KNN CV log-RMSE:", -knn_grid.best_score_)
+
+```
+
+```{python}
+linear_cv_rmse   = -linear_gridsearch.best_score_
+ridge_cv_rmse    = -ridge_gridsearch.best_score_
+lasso_cv_rmse    = -lasso_gridsearch.best_score_
+elastic_cv_rmse  = -elastic_grid.best_score_
+knn_cv_rmse      = -knn_grid.best_score_
+
+cv_scores = {
+    "Linear":  linear_cv_rmse,
+    "Ridge":   ridge_cv_rmse,
+    "Lasso":   lasso_cv_rmse,
+    "Elastic": elastic_cv_rmse,
+    "KNN":     knn_cv_rmse,
+}
+
+print("\nSummary of CV log-RMSE:")
+for name, score in cv_scores.items():
+    print(f"{name}: {score:.5f}")
+
+best_model_name = min(cv_scores, key=cv_scores.get)
+print("\nBest model by CV:", best_model_name)
+
+```
+
+
+```{python}
+
+best_linear = linear_gridsearch.best_estimator_
+best_ridge = ridge_gridsearch.best_estimator_
+best_lasso = lasso_gridsearch.best_estimator_
+best_elastic = elastic_grid.best_estimator_
+best_knn = knn_grid.best_estimator_
+
+best_models = {
+    "Linear": best_linear,
+    "Ridge": best_ridge,
+    "Lasso": best_lasso,
+    "Elastic": best_elastic,
+    "KNN": best_knn,
+}
+
+final_model = best_models[best_model_name]
+print("\nSelected final model:", best_model_name)
+
+```
+
+```{python}
+final_model.fit(x, y_log)
+
+log_preds = final_model.predict(myTest)
+
+print("Min log_pred:", np.min(log_preds))
+print("Max log_pred:", np.max(log_preds))
+
+final_test_pred = np.expm1(log_preds)
+final_test_pred = np.maximum(final_test_pred, 0)
+
+#help with gpt
+print("\nPrediction summary:")
+print("Min:", final_test_pred.min())
+print("Max:", final_test_pred.max())
+print("Mean:", final_test_pred.mean())
+
+submission = pd.DataFrame({
+    "PID": myTest["PID"],
+    "SalePrice": final_test_pred
+})
+
+submission.to_csv("submission2.csv", index=False)
+submission.head()
+
+
+```
+
+
+
+```{python}
+submission.to_csv("submission.csv", index = False)
+
+```
